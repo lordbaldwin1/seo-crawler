@@ -13,3 +13,16 @@ test("normalize URL happy cases", () => {
     expect(normalizeURL(url)).toBe("blog.boot.dev/path")
   }
 });
+
+test("non-URL input throws error", () => {
+  const URLs = [
+    "hps://blog.boot.dev/path/",
+    "https://blog.boot.dev/path",
+    "http://blog.boot.dev/path/",
+    "http://blog.boot.dev/path",
+  ];
+
+  for (const url of URLs) {
+    expect(normalizeURL(url)).toBe("blog.boot.dev/path")
+  }
+});
