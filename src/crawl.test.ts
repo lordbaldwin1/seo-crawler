@@ -1,5 +1,13 @@
 import { expect, test } from "vitest";
-import { getFirstParagraphFromHTML, getH1FromHTML, getImagesFromHTML, getURLsFromHTML, normalizeURL } from "./crawl";
+import {
+  ExtractedPageData,
+  extractPageData,
+  getFirstParagraphFromHTML,
+  getH1FromHTML,
+  getImagesFromHTML,
+  getURLsFromHTML,
+  normalizeURL,
+} from "./crawl";
 
 test("normalizeURL protocol", () => {
   const input = "https://blog.boot.dev/path";
@@ -116,7 +124,10 @@ test("getURLsFromHTML relative and absolute", () => {
   const inputBody = `<html><body><a href="/courses"><span>Boot.dev</span></a><a href="https://blog.boot.dev/stinky"><span>Boot.dev</span></a></body></html>`;
 
   const actual = getURLsFromHTML(inputBody, inputURL);
-  const expected = ["https://blog.boot.dev/courses", "https://blog.boot.dev/stinky"];
+  const expected = [
+    "https://blog.boot.dev/courses",
+    "https://blog.boot.dev/stinky",
+  ];
 
   expect(actual).toEqual(expected);
 });
@@ -225,4 +236,96 @@ test("getImagesFromHTML multiple", () => {
   expect(actual).toEqual(expected);
 });
 
+test("extractPageData basic", () => {
+  const inputURL = "https://blog.boot.dev";
+  const inputBody = `
+    <html><body>
+      <h1>Test Title</h1>
+      <p>This is the first paragraph.</p>
+      <a href="/link1">Link 1</a>
+      <img src="/image1.jpg" alt="Image 1">
+    </body></html>
+  `;
 
+  const actual = extractPageData(inputBody, inputURL);
+  const expected: ExtractedPageData = {
+    url: "https://blog.boot.dev",
+    h1: "Test Title",
+    first_paragraph: "This is the first paragraph.",
+    outgoing_links: ["https://blog.boot.dev/link1"],
+    image_urls: ["https://blog.boot.dev/image1.jpg"],
+  };
+
+  expect(actual).toEqual(expected);
+});
+
+test("extractPageData empty", () => {
+  const inputURL = "https://blog.boot.dev";
+  const inputBody = `
+    <html><body>
+    </body></html>
+  `;
+
+  const actual = extractPageData(inputBody, inputURL);
+  const expected: ExtractedPageData = {
+    url: "https://blog.boot.dev",
+    h1: "",
+    first_paragraph: "",
+    outgoing_links: [],
+    image_urls: [],
+  };
+
+  expect(actual).toEqual(expected);
+});
+
+test("extractPageData multiple outgoing links & image urls", () => {
+  const inputURL = "https://blog.boot.dev";
+  const inputBody = `
+    <html><body>
+      <h1>Test Title</h1>
+      <p>This is the first paragraph.</p>
+      <a href="/link1">Link 1</a>
+      <a href="/link2">Link 2</a>
+      <a href="/link3">Link 3</a>
+      <img src="/image1.jpg" alt="Image 1">
+      <img src="/image2.jpg" alt="Image 2">
+      <img src="/image3.jpg" alt="Image 3">
+    </body></html>
+  `;
+
+  const actual = extractPageData(inputBody, inputURL);
+  const expected: ExtractedPageData = {
+    url: "https://blog.boot.dev",
+    h1: "Test Title",
+    first_paragraph: "This is the first paragraph.",
+    outgoing_links: [
+      "https://blog.boot.dev/link1",
+      "https://blog.boot.dev/link2",
+      "https://blog.boot.dev/link3",
+    ],
+    image_urls: [
+      "https://blog.boot.dev/image1.jpg",
+      "https://blog.boot.dev/image2.jpg",
+      "https://blog.boot.dev/image3.jpg",
+    ],
+  };
+
+  expect(actual).toEqual(expected);
+});
+
+test("extract_page_data main section priority", () => {
+  const inputURL = "https://blog.boot.dev";
+  const inputBody = `
+    <html><body>
+      <nav><p>Navigation paragraph</p></nav>
+      <main>
+        <h1>Main Title</h1>
+        <p>Main paragraph content.</p>
+      </main>
+    </body></html>
+  `;
+
+  const actual = extractPageData(inputBody, inputURL);
+  expect(actual.h1).toEqual("Main Title");
+  expect(actual.first_paragraph).toEqual("Main paragraph content.");
+});
