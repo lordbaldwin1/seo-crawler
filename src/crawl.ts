@@ -93,7 +93,7 @@ export type ExtractedPageData = {
   first_paragraph: string;
   outgoing_links: string[];
   image_urls: string[];
-}
+};
 
 export function extractPageData(html: string, pageURL: string) {
   return {
@@ -103,4 +103,69 @@ export function extractPageData(html: string, pageURL: string) {
     outgoing_links: getURLsFromHTML(html, pageURL),
     image_urls: getImagesFromHTML(html, pageURL),
   } satisfies ExtractedPageData;
-};
+}
+
+export async function getHTML(url: string) {
+  console.log(`crawling ${url}`);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: {
+        "User-Agent": "BaldStalker/1.0",
+      },
+    });
+  } catch (err) {
+    throw new Error(`network error: ${(err as Error).message}`);
+  }
+
+  if (res.status > 399) {
+    console.error("request failed:", res.status, res.statusText);
+    return;
+  }
+
+  const contentType = res.headers.get("content-type");
+  if (!contentType || !contentType.includes("text/html")) {
+    console.error("response is not html:", contentType);
+    return;
+  }
+
+  return await res.text();
+}
+
+export async function crawlPage(
+  baseURL: string,
+  currentURL: string = baseURL,
+  pages: Record<string, number> = {}
+) {
+  const baseDomain = new URL(baseURL).hostname;
+  const currentDomain = new URL(currentURL).hostname;
+  if (baseDomain !== currentDomain) {
+    return pages;
+  }
+
+  const normalizedCurrent = normalizeURL(currentURL);
+
+  if (pages[normalizedCurrent]) {
+    pages[normalizedCurrent]++;
+    return pages;
+  }
+
+  pages[normalizedCurrent] = 1;
+
+  console.log(`crawling ${currentURL}`);
+  let html: string;
+  try {
+    html = await getHTML(currentURL) ?? "";
+  } catch (err) {
+    console.log(`${(err as Error).message}`);
+    return pages;
+  }
+
+  const urls = getURLsFromHTML(html, currentURL);
+  urls.forEach(async (url) => {
+    pages = await crawlPage(baseURL, url, pages);
+  });
+
+  return pages;
+}
