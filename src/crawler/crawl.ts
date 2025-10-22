@@ -61,17 +61,17 @@ class ConcurrentCrawler {
         if ((err as any)?.name === "AbortError") {
           throw new Error("Fetch aborted");
         }
-        throw new Error(`network error: ${(err as Error).message}`);
+        throw new Error(`Network error: ${(err as Error).message}`);
       }
 
       if (res.status > 399) {
-        console.error("request failed:", res.status, res.statusText);
+        console.error("Request failed:", res.status, res.statusText);
         return;
       }
 
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("text/html")) {
-        console.error("response is not html:", contentType);
+        console.error("Response is not html:", contentType);
         return;
       }
 
