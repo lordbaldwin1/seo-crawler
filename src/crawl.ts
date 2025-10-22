@@ -1,4 +1,153 @@
 import { JSDOM } from "jsdom";
+import pLimit from "p-limit";
+
+class ConcurrentCrawler {
+  private baseURL: string;
+  private pages: Record<string, ExtractedPageData> = {};
+  private limit: <T>(fn: () => Promise<T>) => Promise<T>;
+
+  private maxPages: number;
+  private shouldStop = false;
+  private allTasks = new Set<Promise<void>>();
+  private abortController = new AbortController();
+
+  private visited = new Set<string>();
+
+  constructor(
+    baseURL: string,
+    maxConcurrency: number = 5,
+    maxPages: number = 50
+  ) {
+    this.baseURL = baseURL;
+    this.pages = {};
+    this.limit = pLimit(maxConcurrency);
+    this.maxPages = maxPages;
+  }
+
+  private addPageVisit(normalizedURL: string) {
+    if (this.shouldStop) {
+      return false;
+    }
+
+    if (this.visited.has(normalizedURL)) {
+      return false;
+    }
+
+    if (this.visited.size >= this.maxPages) {
+      this.shouldStop = true;
+      console.log("Reached maximum number of pages to crawl.");
+      this.abortController.abort();
+      return false;
+    }
+
+    this.visited.add(normalizedURL);
+    return true;
+  }
+
+  private async getHTML(url: string) {
+    const { signal } = this.abortController;
+
+    return await this.limit(async () => {
+      console.log(`crawling ${url}`);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          headers: {
+            "User-Agent": "BaldStalker/1.0",
+          },
+          signal,
+        });
+      } catch (err) {
+        if ((err as any)?.name === "AbortError") {
+          throw new Error("Fetch aborted");
+        }
+        throw new Error(`network error: ${(err as Error).message}`);
+      }
+
+      if (res.status > 399) {
+        console.error("request failed:", res.status, res.statusText);
+        return;
+      }
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("text/html")) {
+        console.error("response is not html:", contentType);
+        return;
+      }
+
+      return await res.text();
+    });
+  }
+
+  private async crawlPage(currentURL: string) {
+    if (this.shouldStop) {
+      return;
+    }
+
+    const baseDomain = new URL(this.baseURL).hostname;
+    const currentDomain = new URL(currentURL).hostname;
+    if (baseDomain !== currentDomain) {
+      return;
+    }
+
+    const normalizedCurrent = normalizeURL(currentURL);
+
+    const isNewPage = this.addPageVisit(normalizedCurrent);
+    if (!isNewPage) {
+      return;
+    }
+
+    console.log(`crawling ${currentURL}`);
+    let html: string;
+    try {
+      html = (await this.getHTML(currentURL)) ?? "";
+      if (html.length > 0) {
+        this.pages[normalizedCurrent] = extractPageData(html, currentURL);
+      }
+    } catch (err) {
+      console.log(`${(err as Error).message}`);
+      return;
+    }
+
+    if (this.shouldStop) {
+      return;
+    }
+
+    const urls = getURLsFromHTML(html, currentURL);
+
+    const urlPromises = Array.from(urls, (url) => {
+      if (this.shouldStop) {
+        return;
+      }
+      const p = this.crawlPage(url);
+      this.allTasks.add(p);
+      p.finally(() => this.allTasks.delete(p));
+    });
+
+    await Promise.all(urlPromises);
+  }
+
+  public async crawl() {
+    const rootTask = this.crawlPage(this.baseURL);
+    this.allTasks.add(rootTask);
+    try {
+      await rootTask;
+    } finally {
+      this.allTasks.delete(rootTask);
+    }
+    await Promise.allSettled(Array.from(this.allTasks));
+    return this.pages;
+  }
+}
+
+export async function crawlSiteAsync(
+  baseURL: string,
+  maxConcurrency: number = 5,
+  maxPages: number = 100
+) {
+  const crawler = new ConcurrentCrawler(baseURL, maxConcurrency, maxPages);
+  return await crawler.crawl();
+}
 
 export function normalizeURL(url: string) {
   const urlObj = new URL(url);
@@ -103,69 +252,4 @@ export function extractPageData(html: string, pageURL: string) {
     outgoing_links: getURLsFromHTML(html, pageURL),
     image_urls: getImagesFromHTML(html, pageURL),
   } satisfies ExtractedPageData;
-}
-
-export async function getHTML(url: string) {
-  console.log(`crawling ${url}`);
-
-  let res;
-  try {
-    res = await fetch(url, {
-      headers: {
-        "User-Agent": "BaldStalker/1.0",
-      },
-    });
-  } catch (err) {
-    throw new Error(`network error: ${(err as Error).message}`);
-  }
-
-  if (res.status > 399) {
-    console.error("request failed:", res.status, res.statusText);
-    return;
-  }
-
-  const contentType = res.headers.get("content-type");
-  if (!contentType || !contentType.includes("text/html")) {
-    console.error("response is not html:", contentType);
-    return;
-  }
-
-  return await res.text();
-}
-
-export async function crawlPage(
-  baseURL: string,
-  currentURL: string = baseURL,
-  pages: Record<string, number> = {}
-) {
-  const baseDomain = new URL(baseURL).hostname;
-  const currentDomain = new URL(currentURL).hostname;
-  if (baseDomain !== currentDomain) {
-    return pages;
-  }
-
-  const normalizedCurrent = normalizeURL(currentURL);
-
-  if (pages[normalizedCurrent]) {
-    pages[normalizedCurrent]++;
-    return pages;
-  }
-
-  pages[normalizedCurrent] = 1;
-
-  console.log(`crawling ${currentURL}`);
-  let html: string;
-  try {
-    html = await getHTML(currentURL) ?? "";
-  } catch (err) {
-    console.log(`${(err as Error).message}`);
-    return pages;
-  }
-
-  const urls = getURLsFromHTML(html, currentURL);
-  urls.forEach(async (url) => {
-    pages = await crawlPage(baseURL, url, pages);
-  });
-
-  return pages;
 }
