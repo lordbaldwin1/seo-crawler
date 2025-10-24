@@ -7,6 +7,16 @@ export type CrawlURLQueryParameters = {
   maxPages: string;
 };
 
+export type ReactForceGraphShape = {
+  nodes: {
+    id: string;
+  }[];
+  links: {
+    source: string;
+    target: string;
+  }[];
+};
+
 export async function handlerCrawlURL(
   req: Request<{}, {}, {}, CrawlURLQueryParameters>,
   res: Response
@@ -24,5 +34,21 @@ export async function handlerCrawlURL(
 
   const pageData = await crawlSiteAsync(url, undefined, maxPagesNum);
 
-  res.status(200).send(pageData);
+  // react-force-graph shape
+  // nodes: [{"id": url},]
+  // links: [{"source": url, "target": url},]
+
+  const graphData: ReactForceGraphShape = {
+    nodes: [],
+    links: [],
+  };
+
+  for (const [url, data] of Object.entries(pageData)) {
+    graphData.nodes.push({ id: url });
+    for (const outgoing_url of data.outgoing_links) {
+      graphData.links.push({ source: url, target: outgoing_url });
+    }
+  }
+  
+  res.status(200).send(graphData);
 }
