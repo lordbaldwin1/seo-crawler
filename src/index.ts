@@ -2,8 +2,16 @@ import express, { Request } from "express";
 import { middlewareErrorHandler, middlewareLogResponses } from "./middleware";
 import { config } from "./config";
 import { CrawlURLQueryParameters, handlerCrawlURL } from "./api/handlers";
+import cors from "cors";
 
 const app = express();
+
+app.use(
+  cors({
+    origin: config.clientURL,
+    methods: ["GET"],
+  })
+);
 
 app.use(express.json());
 app.use(middlewareLogResponses);

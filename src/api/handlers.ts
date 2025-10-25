@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { crawlSiteAsync } from "../crawler/crawl";
+import { crawlSiteAsync, normalizeURL } from "../crawler/crawl";
 import { BadRequestError } from "../utils.ts/errors";
 
 export type CrawlURLQueryParameters = {
@@ -34,21 +34,24 @@ export async function handlerCrawlURL(
 
   const pageData = await crawlSiteAsync(url, undefined, maxPagesNum);
 
-  // react-force-graph shape
-  // nodes: [{"id": url},]
-  // links: [{"source": url, "target": url},]
-
   const graphData: ReactForceGraphShape = {
     nodes: [],
     links: [],
   };
 
+  const outgoingNodeAdded: Record<string, boolean> = {};
   for (const [url, data] of Object.entries(pageData)) {
     graphData.nodes.push({ id: url });
+
     for (const outgoing_url of data.outgoing_links) {
-      graphData.links.push({ source: url, target: outgoing_url });
+      if (!pageData[outgoing_url] && !outgoingNodeAdded[outgoing_url]) {
+        outgoingNodeAdded[outgoing_url] = true;
+        graphData.nodes.push({ id: normalizeURL(outgoing_url) });
+      }
+
+      graphData.links.push({ source: url, target: normalizeURL(outgoing_url) });
     }
   }
-  
+
   res.status(200).send(graphData);
 }
