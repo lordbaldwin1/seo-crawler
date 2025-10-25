@@ -32,6 +32,12 @@ export async function handlerCrawlURL(
     throw new BadRequestError("URL is required");
   }
 
+  try {
+    new URL(url);
+  } catch {
+    throw new BadRequestError("URL is not a valid URL");
+  }
+
   const pageData = await crawlSiteAsync(url, undefined, maxPagesNum);
 
   const graphData: ReactForceGraphShape = {
@@ -39,17 +45,24 @@ export async function handlerCrawlURL(
     links: [],
   };
 
-  const outgoingNodeAdded: Record<string, boolean> = {};
+  const nodeAdded: Record<string, boolean> = {};
   for (const [url, data] of Object.entries(pageData)) {
+    if (nodeAdded[url]) {
+      continue;
+    }
+
     graphData.nodes.push({ id: url });
+    nodeAdded[url] = true;
 
     for (const outgoing_url of data.outgoing_links) {
-      if (!pageData[outgoing_url] && !outgoingNodeAdded[outgoing_url]) {
-        outgoingNodeAdded[outgoing_url] = true;
-        graphData.nodes.push({ id: normalizeURL(outgoing_url) });
+      const normalizedOutgoingURL = normalizeURL(outgoing_url);
+
+      if (!pageData[normalizedOutgoingURL] && !nodeAdded[normalizedOutgoingURL]) {
+        nodeAdded[normalizedOutgoingURL] = true;
+        graphData.nodes.push({ id: normalizedOutgoingURL });
       }
 
-      graphData.links.push({ source: url, target: normalizeURL(outgoing_url) });
+      graphData.links.push({ source: url, target: normalizedOutgoingURL });
     }
   }
 
