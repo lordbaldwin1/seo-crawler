@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { crawlSiteAsync, normalizeURL } from "../crawler/crawl";
+import { crawlSiteAsync, ExtractedPageData, normalizeURL } from "../crawler/crawl";
 import { BadRequestError } from "../utils.ts/errors";
 
 export type CrawlURLQueryParameters = {
@@ -66,5 +66,14 @@ export async function handlerCrawlURL(
     }
   }
 
-  res.status(200).send(graphData);
+  type Body = {
+    GraphDataBody: ReactForceGraphShape,
+    PageDataBody: Record<string, ExtractedPageData>,
+  }
+  const body: Body = {
+    GraphDataBody: graphData,
+    PageDataBody: pageData,
+  }
+
+  res.status(200).send(body);
 }
