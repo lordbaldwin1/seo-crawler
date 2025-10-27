@@ -142,7 +142,7 @@ class ConcurrentCrawler {
       setTimeout(() => {
         console.log("Timeout reached, completing crawl with current results");
         resolve();
-      }, 10000);
+      }, 5000);
     });
     
     await Promise.race([
