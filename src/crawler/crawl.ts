@@ -66,13 +66,13 @@ class ConcurrentCrawler {
 
       if (res.status > 399) {
         console.error("Request failed:", res.status, res.statusText);
-        return;
+        return "";
       }
 
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("text/html")) {
         console.error("Response is not html:", contentType);
-        return;
+        return "";
       }
 
       return await res.text();
@@ -100,14 +100,17 @@ class ConcurrentCrawler {
     console.log(`crawling ${currentURL}`);
     let html: string;
     try {
-      html = (await this.getHTML(currentURL)) ?? "";
-      if (html.length > 0) {
-        this.pages[normalizedCurrent] = extractPageData(html, currentURL);
-      }
+      html = (await this.getHTML(currentURL));
     } catch (err) {
       console.log(`${(err as Error).message}`);
       return;
     }
+
+    if (html.length === 0) {
+      return;
+    }
+
+    this.pages[normalizedCurrent] = extractPageData(html, currentURL);
 
     if (this.shouldStop) {
       return;
@@ -115,16 +118,15 @@ class ConcurrentCrawler {
 
     const urls = getURLsFromHTML(html, currentURL);
 
-    const urlPromises = Array.from(urls, (url) => {
-      if (this.shouldStop) {
-        return;
-      }
-      const p = this.crawlPage(url);
-      this.allTasks.add(p);
-      p.finally(() => this.allTasks.delete(p));
-    });
+    const crawlPromises: Promise<void>[] = [];
+    for (const url of urls) {
+      if (this.shouldStop) break;
 
-    await Promise.all(urlPromises);
+      const task = this.crawlPage(url);
+      this.allTasks.add(task);
+      task.finally(() => this.allTasks.delete(task));
+      crawlPromises.push(task);
+    }
   }
 
   public async crawl() {
@@ -135,7 +137,19 @@ class ConcurrentCrawler {
     } finally {
       this.allTasks.delete(rootTask);
     }
-    await Promise.allSettled(Array.from(this.allTasks));
+    
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        console.log("Timeout reached, completing crawl with current results");
+        resolve();
+      }, 10000);
+    });
+    
+    await Promise.race([
+      Promise.allSettled(Array.from(this.allTasks)),
+      timeoutPromise,
+    ]);
+    
     return this.pages;
   }
 }
